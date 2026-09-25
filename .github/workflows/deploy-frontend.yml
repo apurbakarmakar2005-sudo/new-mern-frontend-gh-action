@@ -12,15 +12,11 @@ permissions:
 
 jobs:
 
-  # =================================
-  # TEST & BUILD
-  # =================================
   build:
     name: Build Vite Frontend
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -39,9 +35,6 @@ jobs:
         run: npm run build
 
 
-  # =================================
-  # DEPLOY
-  # =================================
   deploy:
     name: Deploy Frontend to EC2
     runs-on: ubuntu-latest
@@ -49,31 +42,18 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-
       - name: Checkout code
         uses: actions/checkout@v4
 
-
-      # =================================
-      # AWS OIDC
-      # =================================
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-
-      # =================================
-      # VERIFY AWS
-      # =================================
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
-
-      # =================================
-      # DEPLOY TO EC2
-      # =================================
       - name: Deploy Frontend to EC2 via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -84,49 +64,25 @@ jobs:
           command_timeout: 10m
 
           script: |
-
             set -e
 
             echo "========================================="
             echo "FRONTEND DEPLOYMENT STARTED"
-            echo "Time: $(date)"
             echo "========================================="
-
-
-            # =================================
-            # VARIABLES
-            # =================================
 
             APP_DIR="/var/www/frontend"
             TEMP_DIR="/tmp/frontend-deploy"
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
-            echo "Repository: $REPO_URL"
-            echo "Branch: $BRANCH"
-            echo "Application directory: $APP_DIR"
-
-
-            # =================================
-            # CREATE APPLICATION DIRECTORY
-            # =================================
-
             sudo mkdir -p "$APP_DIR"
             sudo chown -R ubuntu:ubuntu "$APP_DIR"
 
-
-            # =================================
-            # FIRST DEPLOYMENT
-            # =================================
-
             if [ ! -d "$APP_DIR/.git" ]; then
-
-              echo "First deployment detected."
+              echo "First deployment..."
 
               rm -rf "$TEMP_DIR"
               mkdir -p "$TEMP_DIR"
-
-              echo "Cloning repository..."
 
               git clone \
                 --branch "$BRANCH" \
@@ -134,79 +90,26 @@ jobs:
                 "$REPO_URL" \
                 "$TEMP_DIR"
 
-              echo "Copying project files..."
-
               cp -a "$TEMP_DIR"/. "$APP_DIR"/
-
               rm -rf "$TEMP_DIR"
 
               cd "$APP_DIR"
 
             else
-
-              # =================================
-              # UPDATE EXISTING DEPLOYMENT
-              # =================================
-
-              echo "Existing repository found."
+              echo "Updating existing frontend..."
 
               cd "$APP_DIR"
 
-              echo "Fetching latest changes..."
-
               git fetch origin "$BRANCH"
-
-              echo "Resetting to latest GitHub version..."
-
               git reset --hard "origin/$BRANCH"
-
-              echo "Removing old untracked files..."
-
               git clean -fd
-
             fi
 
-
-            # =================================
-            # CHECK PROJECT
-            # =================================
-
-            echo "========================================="
-            echo "PROJECT FILES"
-            echo "========================================="
-
-            ls -la
-
-
-            # =================================
-            # INSTALL DEPENDENCIES
-            # =================================
-
-            echo "========================================="
-            echo "INSTALLING DEPENDENCIES"
-            echo "========================================="
-
+            echo "Installing dependencies..."
             npm ci
 
-
-            # =================================
-            # BUILD FRONTEND
-            # =================================
-
-            echo "========================================="
-            echo "BUILDING FRONTEND"
-            echo "========================================="
-
+            echo "Building frontend..."
             npm run build
-
-
-            # =================================
-            # CHECK DIST
-            # =================================
-
-            echo "========================================="
-            echo "CHECKING BUILD"
-            echo "========================================="
 
             if [ ! -f "$APP_DIR/dist/index.html" ]; then
               echo "ERROR: dist/index.html not found!"
@@ -215,16 +118,11 @@ jobs:
 
             echo "Frontend build successful."
 
+            echo "Creating Nginx configuration..."
 
-            # =================================
-            # CONFIGURE NGINX
-            # =================================
+            sudo rm -f /etc/nginx/sites-enabled/default
 
-            echo "========================================="
-            echo "CONFIGURING NGINX"
-            echo "========================================="
-
-            sudo tee /etc/nginx/sites-available/frontend > /dev/null <<'EOF'
+            sudo bash -c 'cat > /etc/nginx/sites-available/frontend' <<'NGINX'
 server {
     listen 80;
     server_name _;
@@ -246,55 +144,25 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-EOF
-
-
-            # =================================
-            # ENABLE NGINX SITE
-            # =================================
+NGINX
 
             sudo ln -sf \
               /etc/nginx/sites-available/frontend \
               /etc/nginx/sites-enabled/frontend
 
-            sudo rm -f /etc/nginx/sites-enabled/default
-
-
-            # =================================
-            # TEST NGINX
-            # =================================
-
-            echo "Testing Nginx configuration..."
+            echo "Testing Nginx..."
 
             sudo nginx -t
-
-
-            # =================================
-            # RESTART NGINX
-            # =================================
 
             echo "Restarting Nginx..."
 
             sudo systemctl restart nginx
             sudo systemctl enable nginx
 
+            echo "Checking Nginx status..."
 
-            # =================================
-            # NGINX STATUS
-            # =================================
-
-            echo "========================================="
-            echo "NGINX STATUS"
-            echo "========================================="
-
-            sudo systemctl --no-pager status nginx
-
-
-            # =================================
-            # DEPLOYMENT FINISHED
-            # =================================
+            sudo systemctl is-active nginx
 
             echo "========================================="
             echo "FRONTEND DEPLOYMENT FINISHED"
-            echo "Time: $(date)"
             echo "========================================="
