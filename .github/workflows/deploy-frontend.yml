@@ -33,10 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-         - name: Build frontend
-  env:
-    VITE_API_URL: http://3.228.103.16
-    run: npm run build
+      - name: Build frontend
+        env:
+            VITE_API_URL: http://3.228.103.16
+        run: npm run build
 
 
   # ==============================
