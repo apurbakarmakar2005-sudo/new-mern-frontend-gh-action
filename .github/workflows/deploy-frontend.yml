@@ -75,11 +75,15 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
+            echo "Repository: $REPO_URL"
+            echo "Branch: $BRANCH"
+            echo "Application directory: $APP_DIR"
+
             sudo mkdir -p "$APP_DIR"
             sudo chown -R ubuntu:ubuntu "$APP_DIR"
 
             if [ ! -d "$APP_DIR/.git" ]; then
-              echo "First deployment..."
+              echo "First deployment detected."
 
               rm -rf "$TEMP_DIR"
               mkdir -p "$TEMP_DIR"
@@ -96,7 +100,7 @@ jobs:
               cd "$APP_DIR"
 
             else
-              echo "Updating existing frontend..."
+              echo "Existing frontend repository found."
 
               cd "$APP_DIR"
 
@@ -105,10 +109,16 @@ jobs:
               git clean -fd
             fi
 
-            echo "Installing dependencies..."
+            echo "========================================="
+            echo "INSTALLING DEPENDENCIES"
+            echo "========================================="
+
             npm ci
 
-            echo "Building frontend..."
+            echo "========================================="
+            echo "BUILDING FRONTEND"
+            echo "========================================="
+
             npm run build
 
             if [ ! -f "$APP_DIR/dist/index.html" ]; then
@@ -118,45 +128,48 @@ jobs:
 
             echo "Frontend build successful."
 
-            echo "Creating Nginx configuration..."
+            echo "========================================="
+            echo "CONFIGURING NGINX"
+            echo "========================================="
 
             sudo rm -f /etc/nginx/sites-enabled/default
 
-            sudo bash -c 'cat > /etc/nginx/sites-available/frontend' <<'NGINX'
-server {
-    listen 80;
-    server_name _;
-
-    root /var/www/frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://3.228.103.16;
-        proxy_http_version 1.1;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-NGINX
+            sudo bash -c "printf '%s\n' \
+              'server {' \
+              '    listen 80;' \
+              '    server_name _;' \
+              '' \
+              '    root /var/www/frontend/dist;' \
+              '    index index.html;' \
+              '' \
+              '    location / {' \
+              '        try_files \$uri \$uri/ /index.html;' \
+              '    }' \
+              '' \
+              '    location /api/ {' \
+              '        proxy_pass http://3.228.103.16;' \
+              '        proxy_http_version 1.1;' \
+              '' \
+              '        proxy_set_header Host \$host;' \
+              '        proxy_set_header X-Real-IP \$remote_addr;' \
+              '        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;' \
+              '        proxy_set_header X-Forwarded-Proto \$scheme;' \
+              '    }' \
+              '}' \
+              > /etc/nginx/sites-available/frontend"
 
             sudo ln -sf \
               /etc/nginx/sites-available/frontend \
               /etc/nginx/sites-enabled/frontend
 
-            echo "Testing Nginx..."
+            echo "Testing Nginx configuration..."
 
             sudo nginx -t
 
             echo "Restarting Nginx..."
 
             sudo systemctl restart nginx
+
             sudo systemctl enable nginx
 
             echo "Checking Nginx status..."
@@ -165,4 +178,9 @@ NGINX
 
             echo "========================================="
             echo "FRONTEND DEPLOYMENT FINISHED"
+            echo "========================================="
+
+            echo "Frontend URL:"
+            echo "http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"
+
             echo "========================================="
